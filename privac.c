@@ -1,5 +1,9 @@
 #include <ncurses.h>
-#include </usr/local/include/libwebsockets.h>
+#ifdef OSX
+  #include </usr/local/include/libwebsockets.h>
+#else
+  #include <libwebsockets.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -7,8 +11,12 @@
 
 struct libwebsocket_context *ctx;
 struct libwebsocket *sck;
-unsigned char buffer[LWS_SEND_BUFFER_PRE_PADDING + QUEUE_BUF_SIZE + LWS_SEND_BUFFER_POST_PADDING];
-int blen, listening;
+unsigned char iobuffer[QUEUE_BUF_SIZE];
+unsigned char sendbuffer[LWS_SEND_BUFFER_PRE_PADDING + QUEUE_BUF_SIZE + LWS_SEND_BUFFER_POST_PADDING];
+size_t sendbuffer_len;
+size_t blen;
+int listening;
+int pendingline = 1;
 
 /* XOR str with given key */
 void apply_key(char *str, int len, const char *key) {
@@ -19,6 +27,20 @@ void apply_key(char *str, int len, const char *key) {
 int privac_err(const char *msg) {
   fprintf(stderr, "%s\n", msg);
   return EXIT_FAILURE;
+}
+
+/* print data to the pending line in window */
+void print_msg(char *data, size_t len) {
+  // move to last pending line
+  int y, x;
+  getyx(stdscr, y, x);
+  move(pendingline, 0);
+  int i;
+  for (i = 0; i < len; ++i)
+    printw("%c", data[i]);
+
+  move(y, x);
+  ++pendingline;
 }
 
 /* callback used by libwebsockets */
@@ -37,11 +59,11 @@ static int privac_callback(struct libwebsocket_context *context, struct libwebso
     case LWS_CALLBACK_CLIENT_RECEIVE:
       // do something with the data
 	  privac_err("did get data");
-	  printw((char *)data, len);
+    print_msg(data, len);
       break;
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       // write any queued data to the server
-      //libwebsocket_write(sck, &buffer[LWS_SEND_BUFFER_PRE_PADDING], blen, LWS_WRITE_TEXT);
+      libwebsocket_write(sck, sendbuffer+LWS_SEND_BUFFER_PRE_PADDING, sendbuffer_len, LWS_WRITE_TEXT);
       listening = 1;
       break;
     default:
@@ -66,49 +88,61 @@ static struct libwebsocket_protocols protocols[] = {
 int loop() {
   int cond = 1; int blen = 0; 
   int y, x;
-  unsigned char *p = buffer + LWS_SEND_BUFFER_PRE_PADDING;
+  unsigned char *p = iobuffer;
   listening = 1;
-  while (cond && listening) {
-    int ch = getch();
-    switch (ch)
-    {
-      case ERR: // timed out, do nothing
-        break;
-      case 27: // ESC or ALT. break loop
-        return 0;
-      case 127:
-      case KEY_DC:
-      case KEY_BACKSPACE:
-        // backtrace
-        if ((unsigned long)p >= (unsigned long)buffer + LWS_SEND_BUFFER_PRE_PADDING) {
-          getyx(stdscr, y, x);
-          move(y, x-1);
-          delch();
-          --p; --blen;
-          *p = '\0';
-        }
-        break;
-      case '\n':
-        // send to server
-        if (ctx && sck) {
-          //libwebsocket_callback_on_writable(ctx, sck);
-          listening = 0;
-        }
-        // clean buffer (should happen only once write is finished)
-        printw(" || logged: [%s]\n", buffer + LWS_SEND_BUFFER_PRE_PADDING);
-        memset(&buffer, 0, LWS_SEND_BUFFER_PRE_PADDING + QUEUE_BUF_SIZE);
-        p = buffer + LWS_SEND_BUFFER_PRE_PADDING;
-        blen = 0;
-        break;
-      default:
-        // pop char to buffer and print it
-        printw("%c", ch);
-        *p = (char)ch;
-        ++p; ++blen;
-    }
 
-    // if everything is fine, loop again
-    libwebsocket_service(ctx, 10);  
+  getmaxyx(stdscr, y, x);
+  move(y-1, 0);
+  printw("[message] ");
+
+  while (cond) {
+    if (listening) {
+      int ch = getch();
+      switch (ch) {
+        case ERR: // timed out, do nothing
+          break;
+        case 27: // ESC or ALT. break loop
+          return 0;
+        case 127:
+        case KEY_DC:
+        case KEY_BACKSPACE:
+          // backtrace
+          if ((unsigned long) p >= (unsigned long) iobuffer) {
+            getyx(stdscr, y, x);
+            move(y, x-1);
+            delch();
+            --p; --blen;
+            *p = '\0';
+          }
+          break;
+        case '\n':
+          // copy data to sendbuffer
+          memcpy(sendbuffer+LWS_SEND_BUFFER_PRE_PADDING, iobuffer, blen);
+          sendbuffer_len = blen;
+          // clean buffer
+          memset(&iobuffer, 0, QUEUE_BUF_SIZE);
+          p = iobuffer;
+          blen = 0;
+          // send to server
+          if (ctx && sck) {
+            libwebsocket_callback_on_writable(ctx, sck);
+            listening = 0;
+          }
+          // clear curses line
+          move(getmaxy(stdscr)-1, 0);
+          clrtoeol();
+          printw("[message] ");
+          break;
+        default:
+          // pop char to buffer and print it
+          printw("%c", ch);
+          *p = (char)ch;
+          ++p; ++blen;
+      }
+
+      // if everything is fine, loop again
+      libwebsocket_service(ctx, 10);  
+    }
   }
   return 0;
 }
@@ -122,6 +156,10 @@ int main(int argc, const char * argv[]) {
   raw();
   noecho();
 
+  int wy, wx;
+  getmaxyx(stdscr, wy, wx);
+  printw("----- welcome to privac -----\n");
+
   /* initialise libwebsockets */
 
   const char *addr = "127.0.0.1";
@@ -129,24 +167,25 @@ int main(int argc, const char * argv[]) {
   struct lws_context_creation_info info;
 
   memset(&info, 0, sizeof info);
-  memset(&buffer, '\0', LWS_SEND_BUFFER_PRE_PADDING + QUEUE_BUF_SIZE + LWS_SEND_BUFFER_POST_PADDING);
+  memset(&iobuffer, '\0', QUEUE_BUF_SIZE);
 
   info.port = CONTEXT_PORT_NO_LISTEN;
   info.protocols = protocols;
   info.gid = -1;
   info.uid = -1;
-  
+
   ctx = libwebsocket_create_context(&info);
   if (ctx == NULL) return privac_err("Creating libwebsocket context failed");
-  
+
   sck = libwebsocket_client_connect(ctx, addr, port, 0, "/", "a", "b", "privac-protocol", -1);
   if (sck == NULL) return privac_err("libwebsocket connect failed");
 
   /* start client */
 
-  printw("----- welcome to privac -----\n");
   loop();
+
   refresh();
   endwin();
+  libwebsocket_context_destroy(ctx);
   return EXIT_SUCCESS;
 }
