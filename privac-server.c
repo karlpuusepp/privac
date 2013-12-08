@@ -52,7 +52,7 @@ static int privac_callback(struct libwebsocket_context *context,
 	  // send current buffer, WHATEVER IT MIGHT BE
 	  // this may or may not be a good idea
     libwebsocket_write(wsi, (void*)global_buf, global_buf_len, LWS_WRITE_TEXT);
-    fprintf(stderr, "(debug) Broadcast msg %.*s to client\n", global_buf_len, global_buf);
+    fprintf(stderr, "(debug) Broadcast msg %.*s to client\n", (int) global_buf_len, global_buf);
 	  break;
 	default:
 	  fprintf(stderr, "(warning) Received unhandled callback type: %d\n", reason);
