@@ -51,7 +51,7 @@ static int privac_callback(struct libwebsocket_context *context,
 	case LWS_CALLBACK_SERVER_WRITEABLE:
 	  // send current buffer, WHATEVER IT MIGHT BE
 	  // this may or may not be a good idea
-    libwebsocket_write(wsi, (void*)global_buf, global_buf_len, LWS_WRITE_TEXT);
+    libwebsocket_write(wsi, (void*)global_buf, global_buf_len, LWS_WRITE_BINARY);
     fprintf(stderr, "(debug) Broadcast msg %.*s to client\n", (int) global_buf_len, global_buf);
 	  break;
 	default:

@@ -25,7 +25,16 @@ int pendingline = 1;
 
 /* XOR str with given key */
 void apply_key(char *str, int len) {
-  asm(""/* TODO ASM XOR CODE HERE */);
+  const char *key = "123456";
+  asm("    movl %2, %%ecx; "
+      "    movl %3, %%edx;  "
+      "LP: lodsb;          "
+      //"    xorb (%%edx), %%al;"
+      "    stosb;          "
+      "    loop LP;        "
+      : /* no output*/
+      : "S"(key), "D"(str), "g"(len), "m"(str) /* inputs*/
+      : "%al", "%ecx", "%edx", "memory"); /* clobbered registers */
 }
 
 /* utility function for more flexible error logging */
@@ -73,8 +82,13 @@ static int privac_callback(struct libwebsocket_context *context, struct libwebso
       break;
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       // write any queued data to the server
-      libwebsocket_write(sck, sendbuffer+LWS_SEND_BUFFER_PRE_PADDING, sendbuffer_len, LWS_WRITE_TEXT);
-      listening = 1;
+      if (sendbuffer_len) {
+        char *p = sendbuffer+LWS_SEND_BUFFER_PRE_PADDING;
+        apply_key(p, sendbuffer_len);
+        apply_key(p, sendbuffer_len);
+        libwebsocket_write(sck, sendbuffer+LWS_SEND_BUFFER_PRE_PADDING, sendbuffer_len, LWS_WRITE_BINARY);
+        listening = 1;
+      }
       break;
     default:
       privac_err("(warning) Received unhandled callback type");
