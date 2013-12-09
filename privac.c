@@ -25,13 +25,13 @@ int pendingline = 1;
 
 /* XOR str with given key */
 void apply_key(char *src, int nbytes) {
-  asm("    movl %2, %%ecx;     "
-      "    movq %3, %%rdx;     "
-      "LP: lodsb;              "
-      "    xorb (%%rdx), %%al; "
-	  "    incq %%rdx;         "
-      "    stosb;              "
-      "    loop LP;            "
+  asm("    movl %2, %%ecx;     " // move counter to %ecx
+      "    movq %3, %%rdx;     " // move src addres to %rdx
+      "LP: lodsb;              " // begin loop: load byte from %esi into %al
+      "    xorb (%%rdx), %%al; " // xor loaded byte with value at %rdx, save to %al
+	  "    incq %%rdx;         " // increment pointer to src
+      "    stosb;              " // store xor'd value at %edi
+      "    loop LP;            " // decrement %ecx, goto LP if %ecx > 0
       : /* no output */
       : "S"(cryptkey), "D"(src), "g"(nbytes), "m"(src) /* inputs */
       : "%al", "%ecx", "%rdx", "memory"); /* clobbered registers */
