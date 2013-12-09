@@ -11,7 +11,7 @@
 #define QUEUE_BUF_SIZE 4096
 
 char *nick;
-const char *cryptkey;
+char *cryptkey;
 struct libwebsocket_context *ctx;
 struct libwebsocket *sck;
 unsigned char iobuffer[QUEUE_BUF_SIZE];
@@ -24,17 +24,22 @@ int listening;
 int pendingline = 1;
 
 /* XOR str with given key */
-void apply_key(char *src, int nbytes) {
-  asm("    movl %2, %%ecx;     " // move counter to %ecx
-      "    movq %3, %%rdx;     " // move src addres to %rdx
-      "LP: lodsb;              " // begin loop: load byte from %esi into %al
-      "    xorb (%%rdx), %%al; " // xor loaded byte with value at %rdx, save to %al
-	  "    incq %%rdx;         " // increment pointer to src
-      "    stosb;              " // store xor'd value at %edi
-      "    loop LP;            " // decrement %ecx, goto LP if %ecx > 0
+void apply_key(char *dst, int nbytes) {
+  asm("     movl %2, %%ecx;     " // move counter to %ecx
+      "     pushq %%rsi;        " // save initial value of %rsi (key) on stack
+      " LP: lodsb;              " // begin loop: load byte from %rsi (key) into %al
+      "     cmpb $0, %%al;      " // unless loaded byte is 0...
+      "     jne XR;             " // ... jump to XR
+      "     popq %%rsi;         " // else load inital pointer value back into %rsi
+      "     pushq %%rsi;        " // push initial value on stack again
+      "     lodsb;              " // read new byte from %rsi into %al
+      " XR: xorb (%%rdi), %%al; " // xor loaded byte with char at %rdi (dst), save to %al
+      "     stosb;              " // store xor'd value at %rdi (dst)
+      "     loop LP;            " // decrement %ecx, goto LP if %ecx > 0
+      "     popq %%rsi;         " // pop %rsi from stack
       : /* no output */
-      : "S"(cryptkey), "D"(src), "g"(nbytes), "m"(src) /* inputs */
-      : "%al", "%ecx", "%rdx", "memory"); /* clobbered registers */
+      : "S"(cryptkey), "D"(dst), "g"(nbytes) /* inputs */
+      : "%al", "%ecx", "memory"); /* clobbered registers */
 }
 
 /* utility function for more flexible error logging */
@@ -78,9 +83,9 @@ static int privac_callback(struct libwebsocket_context *context, struct libwebso
     case LWS_CALLBACK_CLOSED:
       return privac_err("Connection closed");
     case LWS_CALLBACK_CLIENT_RECEIVE:
-	  // apply our key
+      // apply our key
       apply_key(data, len);
-	  // display msg
+      // display msg
       print_msg(data, len);
       break;
     case LWS_CALLBACK_CLIENT_WRITEABLE:
@@ -187,7 +192,8 @@ int main(int argc, const char * argv[]) {
   int port = atoi(argv[2]);
   nick = malloc(sizeof(char)*(strlen(argv[3]) + 2));
   sprintf(nick, "<%s> ", argv[3]);
-  cryptkey = argv[4];
+  cryptkey = malloc(sizeof(char)*strlen(argv[4])+1);
+  sprintf(cryptkey, "%s", argv[4]); 
 
   if (port == 0) {
     privac_err("Invalid port number");
@@ -232,5 +238,6 @@ int main(int argc, const char * argv[]) {
   endwin();
   libwebsocket_context_destroy(ctx);
   free(nick);
+  free(cryptkey);
   return EXIT_SUCCESS;
 }
