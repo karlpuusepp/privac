@@ -1,7 +1,13 @@
+/*
+ * privac-server.c
+ * dumb broadcast chat server
+ * Karl Puusepp, 2013
+ */
+
 #ifdef OSX
-  #include </usr/local/include/libwebsockets.h>
+#include </usr/local/include/libwebsockets.h>
 #else
-  #include <libwebsockets.h>
+#include <libwebsockets.h>
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,29 +40,23 @@ static int privac_callback(struct libwebsocket_context *context,
     void *in, size_t len)
 {
   switch (reason) {
-	case LWS_CALLBACK_ESTABLISHED:
+  case LWS_CALLBACK_ESTABLISHED:
       break;
-	case LWS_CALLBACK_RECEIVE:
-	  memcpy(global_buf, in, len);
+  case LWS_CALLBACK_RECEIVE:
+    memcpy(global_buf, in, len);
     global_buf_len = len;
     libwebsocket_callback_on_writable_all_protocol(protocols);
     fprintf(stderr, "(debug) Received message\n");
-	  // if its a join
-	  // send it to everyone as a new join
-	  // else
-	  // send it to everyone as a message string
-	  // either way
-	  // send it to everyone really
-	  break;
-	case LWS_CALLBACK_SERVER_WRITEABLE:
-	  // send current buffer, WHATEVER IT MIGHT BE
-	  // this may or may not be a good idea
+    break;
+  case LWS_CALLBACK_SERVER_WRITEABLE:
+    // send current buffer, WHATEVER IT MIGHT BE
+    // this may or may not be a good idea
     libwebsocket_write(wsi, (void*)global_buf, global_buf_len, LWS_WRITE_BINARY);
     fprintf(stderr, "(debug) Broadcast msg %.*s to client\n", (int) global_buf_len, global_buf);
-	  break;
-	default:
-	  fprintf(stderr, "(warning) Received unhandled callback type: %d\n", reason);
-	  break;
+    break;
+  default:
+    fprintf(stderr, "(warning) Received unhandled callback type: %d\n", reason);
+    break;
   }
   
   return 0;
@@ -82,8 +82,9 @@ int main(int argc, const char *argv[]) {
     return EXIT_FAILURE;
   }
   fprintf(stdout, "starting server...\n");
+
   while (1) {
-    // TODO
+    // poll sockets, call callbacks...
     libwebsocket_service(ctx, 50);
   }
   libwebsocket_context_destroy(ctx);

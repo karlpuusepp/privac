@@ -1,3 +1,9 @@
+/*
+ * privac.c
+ * ncurses chat application with client-side encryption (Vernam's XOR cipher)
+ * Karl Puusepp, 2013
+ */
+
 #ifdef OSX
   #include </usr/local/include/libwebsockets.h>
 #else
@@ -23,7 +29,7 @@ size_t blen;
 int listening;
 int pendingline = 1;
 
-/* XOR str with given key */
+/* XOR string with cipher using Vernam's algorithm */
 void apply_key(char *dst, int nbytes) {
   asm("     movl %2, %%ecx;     " // move counter to %ecx
       "     pushq %%rsi;        " // save initial value of %rsi (key) on stack
